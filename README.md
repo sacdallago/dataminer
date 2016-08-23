@@ -7,7 +7,7 @@
 	4. Run a docker instance with the following:
 
 		```bash
-		docker run -it -p 3030:8888 -p 6006:6006 -v /$(pwd):/notebooks gcr.io/tensorflow/tensorflow
+		docker run -it -p 3030:8888 -p 6006:6006 -v /$(pwd):/notebooks --name tf gcr.io/tensorflow/tensorflow
 		```
 		If you are running windows, change `/$(pwd)` to `$(pwd)`
 
