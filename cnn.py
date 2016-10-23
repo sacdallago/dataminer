@@ -21,14 +21,23 @@ data_ids = [element['id'] for element in food_no_food]
 labels = [int(element['is_food']) for element in food_no_food]
 #data = [rgb2gray(np.array(Image.open(path.join(featuresDir, element)))) for element in data_ids]
 data = [np.array(Image.open(path.join(featuresDir, element))) for element in data_ids]
+seed=ut.resample(np.linspace(1,1000,1000,dtype=int), n_samples=1)[0]
 
 # Split training data in a train set and a test set. The test set will containt 20% of the total
-x_train, x_test, y_train, y_test = cross_validation.train_test_split(data, labels, test_size=.25, random_state=6)
+x_train, x_test, y_train, y_test = cross_validation.train_test_split(data, labels, test_size=.25,random_state=seed)
 
 # Parameters
-learning_rate = 0.001
-training_size = 30
-training_iters = 100
+#learning_rate = 0.001
+learning_rate_start= 0.0001
+training_size = 20
+training_split= 0.8 #split into training_split 1 or 0 and (1-training_split) 0 
+training_iters_max = 100
+training_freq= 2       #how often is each picture trained (on average!)
+sdev= 0.01 #for variable initialization the higher the stddev, the more iterations are needed
+#stddev too small leads to stationary variables (don't take it smaller than 0.01!)!
+
+training_size_1=np.floor(training_split*training_size).astype(int)
+training_size_0=(training_size-training_size_1).astype(int)
 
 # Network Parameters
 w, h, channels = data[0].shape
@@ -82,23 +91,24 @@ def conv_net(x, weights, biases, dropout):
     return out
 
 
-    # Store layers weight & bias
+# Store layers weight & bias
+
 weights = {
     # 5x5 conv, 1 input, 32 outputs
-    'wc1': tf.Variable(tf.random_normal([5, 5, channels, 32])),
+    'wc1': tf.Variable(tf.truncated_normal([5, 5, channels, 32], stddev=sdev, seed=1)),
     # 5x5 conv, 32 inputs, 64 outputs
-    'wc2': tf.Variable(tf.random_normal([5, 5, 32, 64])),
+    'wc2': tf.Variable(tf.truncated_normal([5, 5, 32, 64], stddev=sdev, seed=2)),
     # fully connected, 7*7*64 inputs, 1024 outputs
-    'wd1': tf.Variable(tf.random_normal([75*75*64, 1024])),
+    'wd1': tf.Variable(tf.truncated_normal([25*25*64, 1024], stddev=sdev, seed=3)),
     # 1024 inputs, 10 outputs (class prediction)
-    'out': tf.Variable(tf.random_normal([1024, n_classes]))
+    'out': tf.Variable(tf.truncated_normal([1024, n_classes], stddev=sdev, seed=4))
 }
 
 biases = {
-    'bc1': tf.Variable(tf.random_normal([32])),
-    'bc2': tf.Variable(tf.random_normal([64])),
-    'bd1': tf.Variable(tf.random_normal([1024])),
-    'out': tf.Variable(tf.random_normal([n_classes]))
+    'bc1': tf.Variable(tf.truncated_normal([32], stddev=sdev, seed=5)),
+    'bc2': tf.Variable(tf.truncated_normal([64], stddev=sdev, seed=6)),
+    'bd1': tf.Variable(tf.truncated_normal([1024], stddev=sdev, seed=7)),
+    'out': tf.Variable(tf.truncated_normal([n_classes], stddev=sdev, seed=8))
 }
 
 # Construct model
@@ -106,7 +116,15 @@ pred = conv_net(x, weights, biases, keep_prob)
 
 # Define loss and optimizer
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(pred, y))
-optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
+
+#optimizer without adapted learning_rate
+#optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
+
+#optimizer with adapted learning_rate
+step = tf.Variable(0, trainable=False)
+rate = tf.train.exponential_decay(learning_rate_start, step, 1, 0.9999)
+
+optimizer = tf.train.AdamOptimizer(rate).minimize(cost, global_step=step)
 
 # Evaluate model
 correct_pred = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1))
@@ -139,19 +157,44 @@ for element in y_test:
     
 y_test = np.reshape(y_test_temp,(len(y_test_temp), -1))
 
+# Proportional sampling from both classes, get features for 0 and 1 each
+y_help=np.array([el[1] for el in y_train])
+y_index_0 = np.where(y_help==0)[0]
+y_index_1 = np.where(y_help==1)[0]
+
+x_0 = [x_train[index] for index in y_index_0]
+x_1 = [x_train[index] for index in y_index_1]
+
+#y batch looks always the same for if using proportional sampling
+iy=np.vstack(([[1,0]]*training_size_0,[[0,1]]*training_size_1))
+
 
 # Launch the graph
 with tf.Session() as sess:
     sess.run(init)
-
+    
+    dummy_0 = len(x_0)
+    dummy_1 = len(x_1)
+    
     # Keep training until reach max iterations
-    for epoch in range(training_iters):
-        # Fit training using batch data
+    for epoch in range(training_iters_max):
         
-        ix = ut.shuffle(x_train, n_samples=training_size, random_state=epoch)
-        iy = ut.shuffle(y_train, n_samples=training_size, random_state=epoch)
+        if (dummy_0 < training_size_0 or dummy_1 < training_size_1):
+            break
+            
+        # Fit training using batch data first training_size_0 data are 0 rest random
+        x_batch_0 = ut.resample(x_0, n_samples=training_size_0,replace=False, random_state=seed+epoch)
+        x_batch_1 = ut.resample(x_1, n_samples=training_size_1,replace=False, random_state=seed+epoch)
+        ix = x_batch_0+x_batch_1 #is for concatenating the lists, no addition done here
         
+        dummy_0 = dummy_0 - training_size_0/training_freq
+        dummy_1 = dummy_1 - training_size_1/training_freq
+        
+        #ix = ut.shuffle(x_train, n_samples=training_size, random_state=epoch)
+        #iy = ut.shuffle(y_train, n_samples=training_size, random_state=epoch)
+
         sess.run(optimizer, feed_dict={x: ix, y: iy, keep_prob: 1.})
+        
         # Compute average loss
         loss, acc = sess.run([cost, accuracy], feed_dict={x: ix, y: iy, keep_prob: 1.})
         # Display logs per epoch step
@@ -159,7 +202,7 @@ with tf.Session() as sess:
                   "{:.6f}".format(loss) + ", Training Accuracy= " + \
                   "{:.5f}".format(acc)
     print "Optimization Finished!"
-
+        
     runs = 0
     acc = 0.
     y_pred = []
@@ -184,10 +227,10 @@ with tf.Session() as sess:
     label_class(mt.recall_score(y_true, y_pred, average=None))
     print "F1_score for each class:"
     label_class(mt.f1_score(y_true, y_pred, average=None))
-    print "confusion_matrix"
+    print "confusion_matrix:"
     print mt.confusion_matrix(y_true, y_pred)
     fpr, tpr, tresholds = mt.roc_curve(y_true, y_pred)
-
+    print "seed used for splitting:", seed
 
 
 
