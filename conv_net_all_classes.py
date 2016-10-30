@@ -91,9 +91,9 @@ training_size = 30
 training_iters = 20
 threshold= 0.1 #threshold for accepting a label (in terms of probability; note: all probabilities sum up to 1)
 dropout = 0.75 # Dropout, probability to keep units
-sdev= 0.01 #Stddev of the initiliazed variables. Too small causes stationarity of the modell (NOT <0.01!), too large gives large variety
+sdev = 0.01 #Stddev of the initiliazed variables. Too small causes stationarity of the modell (NOT <0.01!), too large gives large variety
 
-seed=ut.resample(np.linspace(1,1000,1000,dtype=int), n_samples=1)[0]
+seed = ut.resample(np.linspace(1,1000,1000,dtype=int), n_samples=1)[0]
 print "Seed used for data split:", seed
 
 # Network Parameters
@@ -149,7 +149,7 @@ def conv_net(x, weights, biases, dropout):
     return out
 
 
-# In[6]:
+# In[27]:
 
 # Store layers weight & bias
 weights = {
@@ -174,7 +174,7 @@ biases = {
 pred = conv_net(x, weights, biases, keep_prob)
 
 # Define loss and optimizer
-cost = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits (pred, y))
+cost = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(pred, y))
 
 #optimizer with adapted learning_rate
 step = tf.Variable(0, trainable=False)
@@ -354,11 +354,18 @@ with tf.Session() as sess:
     #fpr, tpr, tresholds = mt.roc_curve(y_true, y_pred)
 
 
-# In[23]:
+# In[ ]:
 
 for i in range(len(y_test)):
     print "For", i, "as", y_test[i]
     for j in range(9):
         print "\t", j, "@", class_pred[i][j]*100
     print "\n"
+
+
+# In[32]:
+
+with tf.Session() as sess:
+    sess.run(init)
+    print sess.run([pred], feed_dict={x: [x_test[0]], y: [y_test_partial[0]], keep_prob: 1.})
 
