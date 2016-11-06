@@ -91,3 +91,6 @@ ENV/
 
 # Data dir
 data/
+
+
+*.ckpt
